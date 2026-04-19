@@ -24,15 +24,6 @@ var targetCategories = []string{
 	"small cap",
 }
 
-type SyncJobStatus struct {
-	ID         int       `json:"id"`
-	JobType    string    `json:"job_type"`
-	SchemeCode string    `json:"scheme_code"`
-	Status     string    `json:"status"`
-	ErrorMsg   string    `json:"error_msg,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-}
-
 type Orchestrator struct {
 	db      *store.DB
 	client  *mfapi.Client
@@ -49,7 +40,6 @@ func (o *Orchestrator) Backfill(ctx context.Context) error {
 	if err := o.limiter.Wait(ctx); err != nil {
 		return err
 	}
-
 	allSchemes, err := o.client.FetchAllSchemes(ctx)
 	if err != nil {
 		return err
@@ -102,40 +92,6 @@ func (o *Orchestrator) IncrementalSync(ctx context.Context) error {
 		log.Printf("✅ Synced %s", fund.SchemeCode)
 	}
 	return nil
-}
-
-func (o *Orchestrator) SyncStatus(ctx context.Context) ([]SyncJobStatus, error) {
-	rows, err := o.db.Conn.QueryContext(ctx, `
-		SELECT id, job_type, scheme_code, status, started_at, completed_at, error_msg, created_at
-		FROM sync_jobs
-		ORDER BY created_at DESC
-		LIMIT 50
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var jobs []SyncJobStatus
-	for rows.Next() {
-		var j SyncJobStatus
-		var schemeCode, errorMsg *string
-		var startedAt, completedAt *time.Time
-		if err := rows.Scan(
-			&j.ID, &j.JobType, &schemeCode, &j.Status,
-			&startedAt, &completedAt, &errorMsg, &j.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		if schemeCode != nil {
-			j.SchemeCode = *schemeCode
-		}
-		if errorMsg != nil {
-			j.ErrorMsg = *errorMsg
-		}
-		jobs = append(jobs, j)
-	}
-	return jobs, nil
 }
 
 func (o *Orchestrator) backfillScheme(ctx context.Context, code string) error {
@@ -230,4 +186,47 @@ func (o *Orchestrator) markJobFailed(ctx context.Context, code string, err error
 		UPDATE sync_jobs SET status='failed', completed_at=NOW(), error_msg=$2
 		WHERE scheme_code=$1 AND status='running'
 	`, code, err.Error())
+}
+
+func (o *Orchestrator) SyncStatus(ctx context.Context) ([]SyncJobStatus, error) {
+	rows, err := o.db.Conn.QueryContext(ctx, `
+		SELECT id, job_type, scheme_code, status, started_at, completed_at, error_msg, created_at
+		FROM sync_jobs
+		ORDER BY created_at DESC
+		LIMIT 50
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var jobs []SyncJobStatus
+	for rows.Next() {
+		var j SyncJobStatus
+		var schemeCode, errorMsg *string
+		var startedAt, completedAt *time.Time
+		if err := rows.Scan(
+			&j.ID, &j.JobType, &schemeCode, &j.Status,
+			&startedAt, &completedAt, &errorMsg, &j.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if schemeCode != nil {
+			j.SchemeCode = *schemeCode
+		}
+		if errorMsg != nil {
+			j.ErrorMsg = *errorMsg
+		}
+		jobs = append(jobs, j)
+	}
+	return jobs, nil
+}
+
+type SyncJobStatus struct {
+	ID         int       `json:"id"`
+	JobType    string    `json:"job_type"`
+	SchemeCode string    `json:"scheme_code"`
+	Status     string    `json:"status"`
+	ErrorMsg   string    `json:"error_msg,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
 }
