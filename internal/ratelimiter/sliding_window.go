@@ -31,6 +31,11 @@ func New(db *sql.DB) *SlidingWindowLimiter {
 }
 
 func (l *SlidingWindowLimiter) loadFromDB() {
+	// Skip if no DB configured (e.g. in tests)
+	if l.db == nil {
+		return
+	}
+
 	rows, err := l.db.Query(`
 		SELECT requested_at FROM rate_limiter_log
 		WHERE requested_at > NOW() - INTERVAL '1 hour'
@@ -124,6 +129,11 @@ func (l *SlidingWindowLimiter) record(ctx context.Context) {
 	l.secondWindow = append(l.secondWindow, now)
 	l.minuteWindow = append(l.minuteWindow, now)
 	l.hourWindow   = append(l.hourWindow, now)
+
+	// Skip DB persistence if no DB is configured (e.g. in tests)
+	if l.db == nil {
+		return
+	}
 
 	go func() {
 		l.db.ExecContext(ctx, `INSERT INTO rate_limiter_log (requested_at) VALUES ($1)`, now)
