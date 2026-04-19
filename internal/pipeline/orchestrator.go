@@ -17,11 +17,14 @@ var targetAMCs = []string{
 	"axis",
 	"sbi",
 	"kotak mahindra",
+	"kotak",
 }
 
 var targetCategories = []string{
 	"mid cap",
+	"midcap", 
 	"small cap",
+	"smallcap",
 }
 
 type Orchestrator struct {
@@ -126,21 +129,66 @@ func (o *Orchestrator) backfillScheme(ctx context.Context, code string) error {
 }
 
 func (o *Orchestrator) filterSchemes(all []mfapi.SchemeInfo) []mfapi.SchemeInfo {
+	// Normalize AMC keyword → canonical name
+	amcCanonical := map[string]string{
+		"icici prudential": "icici",
+		"hdfc":             "hdfc",
+		"axis":             "axis",
+		"sbi":              "sbi",
+		"kotak mahindra":   "kotak",
+		"kotak":            "kotak", // same canonical as kotak mahindra
+	}
+
+	// Track one mid cap and one small cap per canonical AMC
+	type key struct{ amc, category string }
+	picked := make(map[key]bool)
+
 	var matched []mfapi.SchemeInfo
 	for _, s := range all {
 		nameLower := strings.ToLower(s.Name)
-		if !matchesAny(nameLower, targetAMCs) {
-			continue
-		}
-		if !matchesAny(nameLower, targetCategories) {
-			continue
-		}
+
+		// Must be direct growth plan
 		if !strings.Contains(nameLower, "direct") {
 			continue
 		}
 		if !strings.Contains(nameLower, "growth") {
 			continue
 		}
+
+		// Determine canonical AMC
+		canonicalAMC := ""
+		for keyword, canonical := range amcCanonical {
+			if strings.Contains(nameLower, keyword) {
+				canonicalAMC = canonical
+				break
+			}
+		}
+		if canonicalAMC == "" {
+			continue
+		}
+
+		// Determine category bucket
+		category := ""
+		if strings.Contains(nameLower, "mid cap") || strings.Contains(nameLower, "midcap") {
+			category = "mid cap"
+		} else if strings.Contains(nameLower, "small cap") || strings.Contains(nameLower, "smallcap") {
+			category = "small cap"
+		}
+		if category == "" {
+			continue
+		}
+
+		// Skip index funds — we want active funds only
+		if strings.Contains(nameLower, "index") || strings.Contains(nameLower, "nifty") {
+			continue
+		}
+
+		// Only pick ONE scheme per canonical AMC per category
+		k := key{canonicalAMC, category}
+		if picked[k] {
+			continue
+		}
+		picked[k] = true
 		matched = append(matched, s)
 	}
 	return matched
