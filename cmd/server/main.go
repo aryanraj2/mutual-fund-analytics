@@ -2,26 +2,30 @@
 package main
 
 import (
+	"context"
 	"log"
+	"net/http"
+	"mutual-fund-analytics/internal/analytics"
+	"mutual-fund-analytics/internal/api"
 	"mutual-fund-analytics/internal/config"
+	"mutual-fund-analytics/internal/mfapi"
+	"mutual-fund-analytics/internal/pipeline"
+	"mutual-fund-analytics/internal/ratelimiter"
 	"mutual-fund-analytics/internal/store"
 
 	"github.com/joho/godotenv"
 )
 
 func main() {
-	// Load .env file
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, reading from environment")
+		log.Println("No .env file, reading from environment")
 	}
 
-	// Load config
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log.Fatalf("config: %v", err)
 	}
 
-	// Connect to DB
 	db, err := store.New(store.Config{
 		Host:     cfg.DBHost,
 		Port:     cfg.DBPort,
@@ -31,10 +35,38 @@ func main() {
 		SSLMode:  cfg.DBSSLMode,
 	})
 	if err != nil {
-		log.Fatalf("Failed to connect to DB: %v", err)
+		log.Fatalf("db: %v", err)
 	}
 	defer db.Close()
 
-	log.Printf("🚀 Server starting on port %s", cfg.ServerPort)
-	// HTTP server comes next
+	limiter := ratelimiter.New(db.Conn)
+	client  := mfapi.NewClient()
+	orch    := pipeline.NewOrchestrator(db, client, limiter)
+	engine  := analytics.NewEngine(db)
+
+	ctx := context.Background()
+
+	// Step 1 — Backfill
+	log.Println("🚀 Starting backfill...")
+	if err := orch.Backfill(ctx); err != nil {
+		log.Fatalf("backfill: %v", err)
+	}
+
+	// Step 2 — Compute analytics
+	log.Println("📊 Computing analytics...")
+	if err := engine.ComputeAll(ctx); err != nil {
+		log.Fatalf("analytics: %v", err)
+	}
+
+	// Step 3 — Start daily sync in background
+	go orch.StartDailySync(ctx)
+
+	// Step 4 — Start HTTP server
+	handler := api.NewHandler(db, engine, orch)
+	router  := api.NewRouter(handler)
+
+	log.Printf("🌐 Server listening on :%s", cfg.ServerPort)
+	if err := http.ListenAndServe(":"+cfg.ServerPort, router); err != nil {
+		log.Fatalf("server: %v", err)
+	}
 }
