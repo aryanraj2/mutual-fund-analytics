@@ -29,41 +29,6 @@ fast ranking and analytics queries via a REST API.
 
 ---
 
-## Project Structure
-
-mutual-fund-analytics/
-├── cmd/
-│   └── server/
-│       └── main.go              # Entry point
-├── internal/
-│   ├── api/
-│   │   ├── handler.go           # HTTP handlers
-│   │   └── routes.go            # Route registration
-│   ├── analytics/
-│   │   └── engine.go            # Rolling returns, drawdown, CAGR
-│   ├── config/
-│   │   └── config.go            # Environment config loader
-│   ├── mfapi/
-│   │   └── client.go            # mfapi.in HTTP client
-│   ├── pipeline/
-│   │   ├── orchestrator.go      # Backfill + incremental sync
-│   │   ├── backfill.go          # Resumable backfill logic
-│   │   └── sync.go              # Daily sync scheduler
-│   ├── ratelimiter/
-│   │   └── sliding_window.go    # 3-constraint rate limiter
-│   └── store/
-│       ├── db.go                # DB connection
-│       ├── funds.go             # Fund queries
-│       ├── nav.go               # NAV queries
-│       └── analytics.go         # Analytics queries
-├── migrations/
-│   └── 001_init.sql             # DB schema
-├── DESIGN_DECISIONS.md          # Architecture decisions
-├── .env                         # Local environment (not committed)
-├── go.mod
-└── go.sum
-
----
 
 ## Prerequisites
 
@@ -83,7 +48,7 @@ psql --version
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/mutual-fund-analytics.git
+git clone https://github.com/aryanraj2/mutual-fund-analytics.git
 cd mutual-fund-analytics
 ```
 
